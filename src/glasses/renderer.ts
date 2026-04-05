@@ -37,6 +37,9 @@ let currentDisplayMode: DisplayMode = 'default';
 // Image update queue — ensures sequential sends
 let imageQueue: Promise<void> = Promise.resolve();
 
+// Event listener cleanup functions — prevent duplicate registrations
+let eventCleanups: (() => void)[] = [];
+
 // Action menu state
 let isMenuActive = false;
 let menuSelectedIndex = 0;
@@ -447,11 +450,10 @@ export async function initGlassesDisplay(b: any, route: NavRoute, mode: TravelMo
     }
     console.log('[Renderer] Glasses display initialized');
 
-    // Start environment data fetching
-    const store = getStore();
+    // Start environment data fetching — use getStore() inside lambda to avoid stale closure
     startEnvironmentUpdates(
-      () => store.progress?.currentPosition || store.origin,
-      store.apiKey,
+      () => getStore().progress?.currentPosition || getStore().origin,
+      getStore().apiKey,
       (envData) => setEnvironment(envData)
     );
   } catch (e) {
@@ -461,6 +463,10 @@ export async function initGlassesDisplay(b: any, route: NavRoute, mode: TravelMo
 
 /** Register glasses event handler for gestures. */
 export function initGlassesEventHandler(b: any) {
+  // Clean up any previous event listeners to prevent duplicates
+  eventCleanups.forEach(fn => fn());
+  eventCleanups = [];
+
   bridge = b;
 
   b.onEvenHubEvent(async (event: any) => {
@@ -523,12 +529,12 @@ export function initGlassesEventHandler(b: any) {
   });
 
   // Listen for navigation progress updates
-  eventBus.on(Events.NAV_PROGRESS, async (progress: unknown) => {
+  eventCleanups.push(eventBus.on(Events.NAV_PROGRESS, async (progress: unknown) => {
     const p = progress as NavProgress;
-    const store = getStore();
-    if (store.state !== 'NAVIGATING') return;
+    const s = getStore();
+    if (s.state !== 'NAVIGATING') return;
 
-    currentRoute = store.route;
+    currentRoute = s.route;
 
     switch (currentDisplayMode) {
       case 'default':
@@ -544,16 +550,15 @@ export function initGlassesEventHandler(b: any) {
         await updateEnvironmentDisplay();
         break;
     }
-  });
+  }));
 
   // Listen for arrival
-  eventBus.on(Events.NAV_ARRIVED, async () => {
+  eventCleanups.push(eventBus.on(Events.NAV_ARRIVED, async () => {
     if (!bridge) return;
     try {
       const config = getAlertContainerConfig('ARRIVED\n\nYou have reached\nyour destination', '');
       await bridge.rebuildPageContainer(config);
 
-      // Auto-shutdown after 5 seconds
       setTimeout(() => {
         try {
           bridge.shutDownPageContainer(0);
@@ -563,12 +568,12 @@ export function initGlassesEventHandler(b: any) {
     } catch (e) {
       console.warn('[Renderer] Arrival display failed:', e);
     }
-  });
+  }));
 
   // Listen for recalculation start
-  eventBus.on(Events.RECALCULATE_REQUESTED, async () => {
+  eventCleanups.push(eventBus.on(Events.RECALCULATE_REQUESTED, async () => {
     await updateTextContainer(NAV_ID, NAV_NAME, 'Recalculating...');
-  });
+  }));
 }
 
 /** Preview an adjacent step for 3 seconds. */

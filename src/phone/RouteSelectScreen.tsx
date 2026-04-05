@@ -68,13 +68,18 @@ export default function RouteSelectScreen({ bridge, onBack, onStartNav }: Props)
   const handleStartNav = () => {
     if (!store.route) return;
 
+    // Start GPS tracking — abort if geolocation is unavailable
+    const gpsAvailable = startTracking(store.route);
+    if (!gpsAvailable) {
+      setError('GPS is not available. Navigation requires location access. Please check that the Even Realities app has location permission enabled.');
+      return;
+    }
+
     // Initialize glasses display
     if (bridge) {
       initGlassesDisplay(bridge, store.route, store.travelMode);
     }
 
-    // Start GPS tracking
-    startTracking(store.route);
     startNavigation();
     onStartNav();
   };

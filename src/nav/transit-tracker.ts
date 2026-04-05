@@ -8,6 +8,7 @@ const BOARDING_PROXIMITY = 100; // meters to consider "at stop"
 let currentTransitStep: NavStep | null = null;
 let boardedAt: number | null = null;
 let lastSubState: TransitSubState = 'WALKING_TO_STOP';
+let lastAlertLevel: AlertLevel = 'none';
 
 function determineTransitSubState(progress: NavProgress): TransitSubState {
   const step = progress.currentStep;
@@ -89,9 +90,9 @@ export function processTransitProgress(progress: NavProgress): TransitProgress {
     stopsRemaining = calculateStopsRemaining(currentTransitStep);
     alertLevel = determineAlertLevel(stopsRemaining);
 
-    const prevAlert = alertLevel;
     setAlertLevel(alertLevel);
-    if (alertLevel !== prevAlert) {
+    if (alertLevel !== lastAlertLevel) {
+      lastAlertLevel = alertLevel;
       eventBus.emit(Events.TRANSIT_ALERT, alertLevel);
     }
   }
@@ -114,4 +115,5 @@ export function resetTransitTracker() {
   currentTransitStep = null;
   boardedAt = null;
   lastSubState = 'WALKING_TO_STOP';
+  lastAlertLevel = 'none';
 }

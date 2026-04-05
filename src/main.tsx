@@ -51,7 +51,3 @@ async function requestWakeLock() {
 }
 
 init();
-
-export function getBridge(): any {
-  return bridge;
-}

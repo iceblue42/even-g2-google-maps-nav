@@ -49,8 +49,6 @@ export async function searchPlaces(query: string, apiKey: string, location?: Lat
 
   return new Promise((resolve, reject) => {
     service.getPlacePredictions(request, (predictions: any[] | null, status: string) => {
-      console.log('[Places] Autocomplete status:', status, 'results:', predictions?.length ?? 0);
-
       if (status === 'ZERO_RESULTS' || !predictions || predictions.length === 0) {
         resolve([]);
         return;

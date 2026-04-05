@@ -16,6 +16,7 @@ let currentRoute: NavRoute | null = null;
 let currentStepIndex = 0;
 let currentLegIndex = 0;
 let offRouteCount = 0;
+let generation = 0; // Guards against stale GPS callbacks after route reset
 
 function getAllSteps(): NavStep[] {
   if (!currentRoute) return [];
@@ -136,18 +137,31 @@ function onPositionError(err: GeolocationPositionError) {
   // Don't stop tracking — GPS may recover
 }
 
-export function startTracking(route: NavRoute) {
+/** Returns true if live GPS tracking started, false if geolocation is unavailable. */
+export function startTracking(route: NavRoute): boolean {
   stopTracking();
   currentRoute = route;
   currentStepIndex = 0;
   currentLegIndex = 0;
   offRouteCount = 0;
+  generation++;
+  const expectedGeneration = generation;
 
-  watchId = navigator.geolocation.watchPosition(onPositionUpdate, onPositionError, {
+  if (!navigator.geolocation) {
+    return false;
+  }
+
+  watchId = navigator.geolocation.watchPosition(
+    (pos) => {
+      if (generation !== expectedGeneration) return;
+      onPositionUpdate(pos);
+    },
+    onPositionError, {
     enableHighAccuracy: true,
     maximumAge: 2000,
     timeout: 10000,
   });
+  return true;
 }
 
 export function stopTracking() {

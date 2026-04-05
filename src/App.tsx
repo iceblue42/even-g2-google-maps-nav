@@ -33,28 +33,30 @@ export default function App({ bridge }: AppProps) {
     }
   }, [store.apiKey]);
 
-  // Try to load API key from bridge storage or localStorage on mount
+  // Try to load API key from bridge storage, then localStorage as fallback
   useEffect(() => {
-    // Check localStorage first (works in all contexts)
-    try {
-      const localKey = localStorage.getItem('gmaps_api_key');
-      if (localKey) {
-        setApiKeyAction(localKey);
-        setScreen('search');
-        return;
+    const loadKey = async () => {
+      // Try bridge first
+      if (bridge) {
+        try {
+          const key = await bridge.getLocalStorage('gmaps_api_key');
+          if (key) {
+            setApiKeyAction(key);
+            setScreen('search');
+            return;
+          }
+        } catch (_e) { /* bridge read failed */ }
       }
-    } catch (_e) { /* ignore */ }
-
-    // Then check bridge storage (Even Hub context)
-    if (!bridge) return;
-    bridge.getLocalStorage('gmaps_api_key').then((key: string | null) => {
-      if (key) {
-        setApiKeyAction(key);
-        // Also sync to localStorage
-        try { localStorage.setItem('gmaps_api_key', key); } catch (_e) { /* ignore */ }
-        setScreen('search');
-      }
-    }).catch(() => {});
+      // Fallback to localStorage
+      try {
+        const localKey = localStorage.getItem('gmaps_api_key');
+        if (localKey) {
+          setApiKeyAction(localKey);
+          setScreen('search');
+        }
+      } catch (_e) { /* ignore */ }
+    };
+    loadKey();
   }, [bridge]);
 
   return (

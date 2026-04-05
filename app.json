@@ -2,7 +2,7 @@
   "package_id": "com.evennav.googlemaps",
   "edition": "202601",
   "name": "EvenNav",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "min_app_version": "0.0.1",
   "min_sdk_version": "0.0.9",
   "entrypoint": "index.html",
@@ -13,12 +13,10 @@
       "desc": "Access Google Maps APIs for navigation and map tiles",
       "whitelist": [
         "maps.googleapis.com",
-        "www.googleapis.com",
         "basemaps.cartocdn.com",
         "airquality.googleapis.com",
         "weather.googleapis.com",
-        "pollen.googleapis.com",
-        "ipapi.co"
+        "pollen.googleapis.com"
       ]
     },
     {

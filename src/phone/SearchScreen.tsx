@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { searchPlaces, getPlaceLocation, reverseGeocode } from '../nav/places';
-import { getLocationFallback } from '../nav/geolocation';
+import { getLocation } from '../nav/geolocation';
 import { setOrigin, setDestination, subscribe, getStore } from '../state/nav-state';
 import type { PlacePrediction } from '../state/types';
 
@@ -23,13 +23,12 @@ export default function SearchScreen({ onRouteSearch }: Props) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const originDebounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  // Try to get location automatically on mount
+  // Try to get GPS location
   const tryGetLocation = () => {
-    if (!store.apiKey) return;
     setGpsLoading(true);
     setLocationError('');
 
-    getLocationFallback(store.apiKey)
+    getLocation()
       .then(pos => {
         setOrigin(pos);
         setLocationError('');
@@ -37,8 +36,7 @@ export default function SearchScreen({ onRouteSearch }: Props) {
         setShowOriginSearch(false);
       })
       .catch(err => {
-        console.error('[GPS] All location methods failed:', err);
-        setLocationError(`Auto-location failed. Please set your starting location manually.`);
+        setLocationError(err.message || 'Could not get GPS location.');
         setGpsLoading(false);
         setShowOriginSearch(true);
       });
@@ -46,9 +44,8 @@ export default function SearchScreen({ onRouteSearch }: Props) {
 
   useEffect(() => {
     if (store.origin) return;
-    if (!store.apiKey) return;
     tryGetLocation();
-  }, [store.origin, store.apiKey]);
+  }, [store.origin]);
 
   // Reverse geocode when origin is set
   useEffect(() => {
@@ -98,7 +95,9 @@ export default function SearchScreen({ onRouteSearch }: Props) {
       setOriginAddress(place.name);
       setLocationError('');
       setShowOriginSearch(false);
-    } catch (_e) { /* ignore */ }
+    } catch (e: any) {
+      setLocationError(`Could not get location details: ${e.message || 'Unknown error'}`);
+    }
   };
 
   const handleSelectPlace = async (prediction: PlacePrediction) => {
@@ -109,9 +108,13 @@ export default function SearchScreen({ onRouteSearch }: Props) {
     try {
       const place = await getPlaceLocation(prediction.placeId, store.apiKey);
       setDestination({ name: place.name, location: place.location });
+      if (!store.origin) {
+        setSearchError('Please set your starting location first.');
+        return;
+      }
       onRouteSearch();
     } catch (e: any) {
-      console.error('Place details error:', e);
+      setSearchError(`Could not get place details: ${e.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }

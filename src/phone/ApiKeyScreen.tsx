@@ -24,16 +24,18 @@ export default function ApiKeyScreen({ bridge, onComplete }: Props) {
       return;
     }
 
-    // Persist to both bridge storage and localStorage
-    try {
-      localStorage.setItem('gmaps_api_key', key.trim());
-    } catch (_e) { /* ignore */ }
+    // Persist to bridge storage (scoped to this plugin), with localStorage as backup
+    let persisted = false;
     if (bridge) {
       try {
         await bridge.setLocalStorage('gmaps_api_key', key.trim());
+        persisted = true;
       } catch (e) {
-        console.warn('Could not persist API key to bridge storage:', e);
+        console.warn('Bridge storage write failed, falling back to localStorage:', e);
       }
+    }
+    if (!persisted) {
+      try { localStorage.setItem('gmaps_api_key', key.trim()); } catch (_e) { /* ignore */ }
     }
 
     setApiKey(key.trim());

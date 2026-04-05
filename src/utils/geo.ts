@@ -46,6 +46,8 @@ export function pointToSegment(p: LatLng, a: LatLng, b: LatLng): { point: LatLng
 
 /** Find the closest point on an entire polyline to a given point. */
 export function snapToPolyline(p: LatLng, polyline: LatLng[]): { point: LatLng; distance: number; segmentIndex: number } {
+  if (polyline.length === 0) return { point: p, distance: 0, segmentIndex: 0 };
+
   let bestDist = Infinity;
   let bestPoint = polyline[0];
   let bestSegment = 0;
@@ -65,6 +67,7 @@ export function snapToPolyline(p: LatLng, polyline: LatLng[]): { point: LatLng; 
 /** Calculate distance along a polyline from a start point to the end. */
 export function distanceAlongPolyline(polyline: LatLng[], fromIndex: number, fromPoint: LatLng): number {
   if (polyline.length < 2) return 0;
+  if (fromIndex >= polyline.length - 1) return 0;
   let total = haversineDistance(fromPoint, polyline[fromIndex + 1]);
   for (let i = fromIndex + 1; i < polyline.length - 1; i++) {
     total += haversineDistance(polyline[i], polyline[i + 1]);
