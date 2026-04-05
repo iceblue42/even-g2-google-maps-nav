@@ -2,29 +2,28 @@
   "package_id": "com.evennav.googlemaps",
   "edition": "202601",
   "name": "EvenNav",
-  "version": "0.1.0",
-  "min_app_version": "1.3.0",
+  "version": "1.0.4",
+  "min_app_version": "0.0.1",
   "min_sdk_version": "0.0.9",
-  "tagline": "Google Maps navigation on your glasses",
-  "description": "Turn-by-turn navigation with map overlay for walking, cycling, and transit modes. Shows directions, ETA, and a live map on your Even G2 glasses.",
-  "author": "EvenNav",
   "entrypoint": "index.html",
   "supported_languages": ["en"],
   "permissions": [
     {
       "name": "network",
-      "desc": "Access Google Maps APIs for directions, places, and map tiles",
+      "desc": "Access Google Maps APIs for navigation and map tiles",
       "whitelist": [
         "maps.googleapis.com",
+        "www.googleapis.com",
         "basemaps.cartocdn.com",
         "airquality.googleapis.com",
         "weather.googleapis.com",
-        "pollen.googleapis.com"
+        "pollen.googleapis.com",
+        "ipapi.co"
       ]
     },
     {
       "name": "location",
-      "desc": "Track your position for navigation and map display"
+      "desc": "Track position for navigation"
     }
   ]
 }

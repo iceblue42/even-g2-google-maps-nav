@@ -24,7 +24,10 @@ export default function ApiKeyScreen({ bridge, onComplete }: Props) {
       return;
     }
 
-    // Persist to bridge storage if available
+    // Persist to both bridge storage and localStorage
+    try {
+      localStorage.setItem('gmaps_api_key', key.trim());
+    } catch (_e) { /* ignore */ }
     if (bridge) {
       try {
         await bridge.setLocalStorage('gmaps_api_key', key.trim());

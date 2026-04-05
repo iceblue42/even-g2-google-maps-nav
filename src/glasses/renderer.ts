@@ -1,5 +1,5 @@
 import type { NavRoute, NavProgress, TransitProgress, TravelMode, DisplayMode } from '../state/types';
-import { getStore, setDisplayMode, setNavState, setEnvironment } from '../state/nav-state';
+import { getStore, setDisplayMode, setNavState, setEnvironment, resetNavigation } from '../state/nav-state';
 import { eventBus, Events } from '../state/events';
 import { processTransitProgress } from '../nav/transit-tracker';
 import {
@@ -36,6 +36,11 @@ let currentDisplayMode: DisplayMode = 'default';
 
 // Image update queue — ensures sequential sends
 let imageQueue: Promise<void> = Promise.resolve();
+
+// Action menu state
+let isMenuActive = false;
+let menuSelectedIndex = 0;
+const MENU_ITEMS = ['Resume Navigation', 'Recalculate Route', 'Exit App'];
 
 // Throttle map updates
 let lastMapUpdateTime = 0;
@@ -266,6 +271,92 @@ async function updateAlertDisplay(transitProgress: TransitProgress) {
   ]);
 }
 
+/** Show the action menu on glasses (double-press). */
+async function showActionMenu() {
+  if (!bridge) return;
+  isMenuActive = true;
+  menuSelectedIndex = 0;
+  await renderMenu();
+}
+
+async function renderMenu() {
+  if (!bridge) return;
+
+  const menuLines = MENU_ITEMS.map((item, i) => {
+    const cursor = i === menuSelectedIndex ? '> ' : '  ';
+    return `${cursor}${item}`;
+  }).join('\n');
+
+  const menuText = `── Actions ──\n\n${menuLines}`;
+  const footerText = 'Swipe: select | Press: confirm';
+
+  const config = getAlertContainerConfig(menuText, footerText);
+  try {
+    await bridge.rebuildPageContainer(config);
+  } catch (e) {
+    console.warn('[Renderer] Menu rebuild failed:', e);
+  }
+}
+
+async function handleMenuSelect() {
+  if (!bridge) return;
+  const selected = MENU_ITEMS[menuSelectedIndex];
+
+  isMenuActive = false;
+
+  if (selected === 'Exit App') {
+    // Show exit confirmation
+    const config = getAlertContainerConfig('Closing app...', '');
+    try {
+      await bridge.rebuildPageContainer(config);
+      // Small delay so user sees the message
+      setTimeout(() => {
+        try {
+          bridge.shutDownPageContainer(0);
+        } catch (_e) { /* ignore */ }
+        setNavState('IDLE');
+        resetNavigation();
+      }, 500);
+    } catch (_e) { /* ignore */ }
+    return;
+  }
+
+  if (selected === 'Recalculate Route') {
+    // Rebuild normal display first, then recalculate
+    await returnToNavDisplay();
+    eventBus.emit(Events.RECALCULATE_REQUESTED);
+    return;
+  }
+
+  // Resume Navigation
+  await returnToNavDisplay();
+}
+
+async function returnToNavDisplay() {
+  if (!bridge) return;
+  const store = getStore();
+  const progress = store.progress;
+  if (!progress || !currentRoute) {
+    const config = getDefaultContainerConfig('Resuming...', '', '', '');
+    await bridge.rebuildPageContainer(config);
+    lastMapUpdateTime = 0;
+    return;
+  }
+
+  const allSteps = currentRoute.legs.flatMap(l => l.steps);
+  const header = formatHeader(progress);
+  const nav = formatNavInstruction(progress);
+  const envText = formatEnvironmentCompact(store.environment);
+  const footer = formatFooter(progress, allSteps.length);
+  const config = getDefaultContainerConfig(header, nav, envText, footer);
+  try {
+    await bridge.rebuildPageContainer(config);
+    lastMapUpdateTime = 0;
+  } catch (e) {
+    console.warn('[Renderer] Return to nav failed:', e);
+  }
+}
+
 async function switchToNormalMode() {
   if (!bridge) return;
   isAlertMode = false;
@@ -373,18 +464,44 @@ export function initGlassesEventHandler(b: any) {
   bridge = b;
 
   b.onEvenHubEvent(async (event: any) => {
-    // Double-click (system event) -> recalculate
+    // Double-click (system event) -> open action menu
     if (event.sysEvent) {
       const eventType = event.sysEvent.eventType;
       // DOUBLE_CLICK_EVENT = 3
       if (eventType === 3) {
-        eventBus.emit(Events.RECALCULATE_REQUESTED);
+        if (isMenuActive) {
+          // Double-click while in menu -> confirm selection
+          await handleMenuSelect();
+        } else {
+          // Double-click from nav -> open menu
+          await showActionMenu();
+        }
         return;
       }
     }
 
     if (event.textEvent) {
       const eventType = event.textEvent.eventType;
+
+      if (isMenuActive) {
+        // Menu mode: swipe navigates, press confirms
+        switch (eventType) {
+          case 0: // CLICK_EVENT -> confirm selection
+            await handleMenuSelect();
+            break;
+          case 1: // SCROLL_TOP_EVENT (swipe up) -> move selection up
+            menuSelectedIndex = Math.max(0, menuSelectedIndex - 1);
+            await renderMenu();
+            break;
+          case 2: // SCROLL_BOTTOM_EVENT (swipe down) -> move selection down
+            menuSelectedIndex = Math.min(MENU_ITEMS.length - 1, menuSelectedIndex + 1);
+            await renderMenu();
+            break;
+        }
+        return;
+      }
+
+      // Normal navigation mode
       switch (eventType) {
         case 0: // CLICK_EVENT -> cycle display mode
           await cycleDisplayMode();

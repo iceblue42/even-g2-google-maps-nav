@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { searchPlaces, getPlaceLocation, reverseGeocode } from '../nav/places';
+import { getLocationFallback } from '../nav/geolocation';
 import { setOrigin, setDestination, subscribe, getStore } from '../state/nav-state';
 import type { PlacePrediction } from '../state/types';
 
@@ -10,26 +11,44 @@ interface Props {
 export default function SearchScreen({ onRouteSearch }: Props) {
   const store = useSyncExternalStore(subscribe, getStore, getStore);
   const [query, setQuery] = useState('');
+  const [originQuery, setOriginQuery] = useState('');
   const [suggestions, setSuggestions] = useState<PlacePrediction[]>([]);
+  const [originSuggestions, setOriginSuggestions] = useState<PlacePrediction[]>([]);
   const [loading, setLoading] = useState(false);
   const [gpsLoading, setGpsLoading] = useState(false);
   const [originAddress, setOriginAddress] = useState('');
   const [searchError, setSearchError] = useState('');
+  const [locationError, setLocationError] = useState('');
+  const [showOriginSearch, setShowOriginSearch] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const originDebounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  // Get current location on mount
+  // Try to get location automatically on mount
+  const tryGetLocation = () => {
+    if (!store.apiKey) return;
+    setGpsLoading(true);
+    setLocationError('');
+
+    getLocationFallback(store.apiKey)
+      .then(pos => {
+        setOrigin(pos);
+        setLocationError('');
+        setGpsLoading(false);
+        setShowOriginSearch(false);
+      })
+      .catch(err => {
+        console.error('[GPS] All location methods failed:', err);
+        setLocationError(`Auto-location failed. Please set your starting location manually.`);
+        setGpsLoading(false);
+        setShowOriginSearch(true);
+      });
+  };
+
   useEffect(() => {
     if (store.origin) return;
-    setGpsLoading(true);
-    navigator.geolocation.getCurrentPosition(
-      pos => {
-        setOrigin({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        setGpsLoading(false);
-      },
-      () => setGpsLoading(false),
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
-  }, [store.origin]);
+    if (!store.apiKey) return;
+    tryGetLocation();
+  }, [store.origin, store.apiKey]);
 
   // Reverse geocode when origin is set
   useEffect(() => {
@@ -39,28 +58,47 @@ export default function SearchScreen({ onRouteSearch }: Props) {
       .catch(() => setOriginAddress(`${store.origin!.lat.toFixed(4)}, ${store.origin!.lng.toFixed(4)}`));
   }, [store.origin, store.apiKey]);
 
+  // Destination search
   const handleQueryChange = (value: string) => {
     setQuery(value);
-
     if (debounceRef.current) clearTimeout(debounceRef.current);
-
-    if (value.length < 3) {
-      setSuggestions([]);
-      return;
-    }
+    if (value.length < 3) { setSuggestions([]); return; }
 
     debounceRef.current = setTimeout(async () => {
       try {
         setSearchError('');
-        console.log('[SearchScreen] Searching for:', value, 'apiKey present:', !!store.apiKey);
         const results = await searchPlaces(value, store.apiKey, store.origin ?? undefined);
-        console.log('[SearchScreen] Got results:', results.length);
         setSuggestions(results);
       } catch (e: any) {
-        console.error('Search error:', e);
         setSearchError(e.message || 'Search failed');
       }
     }, 300);
+  };
+
+  // Origin search
+  const handleOriginQueryChange = (value: string) => {
+    setOriginQuery(value);
+    if (originDebounceRef.current) clearTimeout(originDebounceRef.current);
+    if (value.length < 3) { setOriginSuggestions([]); return; }
+
+    originDebounceRef.current = setTimeout(async () => {
+      try {
+        const results = await searchPlaces(value, store.apiKey);
+        setOriginSuggestions(results);
+      } catch (_e) { /* ignore */ }
+    }, 300);
+  };
+
+  const handleSelectOrigin = async (prediction: PlacePrediction) => {
+    setOriginSuggestions([]);
+    setOriginQuery(prediction.mainText);
+    try {
+      const place = await getPlaceLocation(prediction.placeId, store.apiKey);
+      setOrigin(place.location);
+      setOriginAddress(place.name);
+      setLocationError('');
+      setShowOriginSearch(false);
+    } catch (_e) { /* ignore */ }
   };
 
   const handleSelectPlace = async (prediction: PlacePrediction) => {
@@ -83,13 +121,63 @@ export default function SearchScreen({ onRouteSearch }: Props) {
     <div className="screen">
       <p className="screen-title">Where to?</p>
 
+      {/* Origin display */}
       <div style={{ fontSize: 13, color: '#888', marginBottom: 4 }}>
         {gpsLoading ? 'Getting your location...' :
           originAddress ? `From: ${originAddress}` :
           store.origin ? `From: ${store.origin.lat.toFixed(4)}, ${store.origin.lng.toFixed(4)}` :
-          'Location unavailable'}
+          'Starting location not set'}
       </div>
 
+      {/* Origin controls: change / retry */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+        <button
+          className="btn btn-secondary btn-small"
+          onClick={() => setShowOriginSearch(!showOriginSearch)}
+          style={{ flex: 1 }}
+        >
+          {store.origin ? 'Change start' : 'Set start location'}
+        </button>
+        <button
+          className="btn btn-secondary btn-small"
+          onClick={tryGetLocation}
+          disabled={gpsLoading}
+          style={{ flex: 1 }}
+        >
+          {gpsLoading ? 'Locating...' : 'Use GPS'}
+        </button>
+      </div>
+
+      {locationError && <div className="error-banner">{locationError}</div>}
+
+      {/* Origin search input */}
+      {showOriginSearch && (
+        <>
+          <div className="input-group">
+            <label>Starting location</label>
+            <input
+              type="text"
+              className="text-input"
+              placeholder="Search for your current location..."
+              value={originQuery}
+              onChange={e => handleOriginQueryChange(e.target.value)}
+              autoFocus
+            />
+          </div>
+          {originSuggestions.length > 0 && (
+            <ul className="suggestion-list">
+              {originSuggestions.map(s => (
+                <li key={s.placeId} className="suggestion-item" onClick={() => handleSelectOrigin(s)}>
+                  <div className="suggestion-main">{s.mainText}</div>
+                  {s.secondaryText && <div className="suggestion-secondary">{s.secondaryText}</div>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+
+      {/* Destination search */}
       <div className="input-group">
         <label>Destination</label>
         <input
@@ -98,7 +186,6 @@ export default function SearchScreen({ onRouteSearch }: Props) {
           placeholder="Search for a place..."
           value={query}
           onChange={e => handleQueryChange(e.target.value)}
-          autoFocus
         />
       </div>
 
@@ -113,15 +200,9 @@ export default function SearchScreen({ onRouteSearch }: Props) {
       {suggestions.length > 0 && (
         <ul className="suggestion-list">
           {suggestions.map(s => (
-            <li
-              key={s.placeId}
-              className="suggestion-item"
-              onClick={() => handleSelectPlace(s)}
-            >
+            <li key={s.placeId} className="suggestion-item" onClick={() => handleSelectPlace(s)}>
               <div className="suggestion-main">{s.mainText}</div>
-              {s.secondaryText && (
-                <div className="suggestion-secondary">{s.secondaryText}</div>
-              )}
+              {s.secondaryText && <div className="suggestion-secondary">{s.secondaryText}</div>}
             </li>
           ))}
         </ul>
